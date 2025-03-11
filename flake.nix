@@ -19,17 +19,49 @@
 
       makeVariantDDB = variant: pkgs.runCommand "ddb-${variant}"  
       {
-        buildInputs = [
-          artiq.devShells.x86_64-linux.boards.buildInputs
-        ];
+        buildInputs = artiq.devShells.x86_64-linux.boards.buildInputs;
       }
       ''
       mkdir -p $out
       artiq_ddb_template ${./firmware}/${variant}.json -o $out/device_db.py
       '';
 
+      makeRtioMap = variant: pkgs.runCommand "rtiomap-${variant}"
+      {
+        buildInputs = artiq.devShells.x86_64-linux.boards.buildInputs;
+      }
+      ''
+      mkdir -p $out
+      artiq_rtiomap --device-db ${makeVariantDDB variant}/device_db.py $out/rtio_map
+      '';
+
+      makeStorage = variant: pkgs.runCommand "storage-${variant}"
+      {
+        buildInputs = artiq.devShells.x86_64-linux.boards.buildInputs;
+      }
+      ''
+      mkdir -p $out
+      artiq_mkfs -f device_map ${makeRtioMap variant}/rtio_map $out/storage.img
+      '';
+
+      flash = variant: pkgs.writeShellApplication {
+        name = "flash";
+        runtimeInputs = artiq.devShells.x86_64-linux.boards.buildInputs;
+        text = ''
+          artiq_flash \
+            -t kasli \
+            -d ${makeArtiqBoardPackage variant} \
+            -f ${makeStorage variant}/storage.img \
+            erase gateware bootloader firmware storage start
+        '';
+  };
     in rec
     {
+      apps.x86_64-linux.flash-oshqe-v1 = {
+        type = "app";
+        program = "${flash "oshqe-v1"}/bin/flash";
+      };
+
       # Default shell for `nix develop`
       devShells.x86_64-linux.default = pkgs.mkShell {
         buildInputs = [
@@ -49,9 +81,9 @@
         paths = devShells.x86_64-linux.default.buildInputs;
       };
       packages.x86_64-linux = {
-        pw2502001 = makeArtiqBoardPackage "pw2502001";
+        firmware-oshqe-v1 = makeArtiqBoardPackage "oshqe-v1";
 
-        ddb_pw2502001 = makeVariantDDB "pw2502001";
+        ddb-oshqe-v1 = makeVariantDDB "oshqe-v1";
       };
     };
 
