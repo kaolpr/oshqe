@@ -1,1 +1,6 @@
 .direnv/**
+**.pyc
+**.pyon
+**.h5
+**.mdb
+**.mdb-lock

@@ -73,6 +73,7 @@
             ps.pillow
           ]))
           # Non-Python packages
+          pkgs.hdfview
           artiq-full.openocd-bscanspi # needed for flashing boards, also provides proxy bitstreams
         ];
       };
