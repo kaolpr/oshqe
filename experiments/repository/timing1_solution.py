@@ -3,7 +3,7 @@ from user import user_id
 from common import Scope
 
 
-class Timing1(EnvExperiment):
+class Timing1Solution(EnvExperiment):
     def build(self):
         self.setattr_device("core")
         self.setattr_device("ttl1")
@@ -23,7 +23,11 @@ class Timing1(EnvExperiment):
         
         # SOLUTION -------------------------------------------------------------
 
-        # TODO Your code should be here
+        self.ttl1.on()
+        delay(2*us)
+        self.ttl1.off()
+        delay(1*us)
+        self.ttl3.pulse(2*us)
 
         # END SOLUTION ---------------------------------------------------------
         # This commmand downloads the waveform from the scope
