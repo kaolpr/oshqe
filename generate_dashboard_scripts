@@ -1,0 +1,1 @@
+./management/manage generate-dashboard-config --output-dir ./dashboard-configs --applet-path /oshqe/applets --users 3 --master-ip 192.168.168.61 -s all

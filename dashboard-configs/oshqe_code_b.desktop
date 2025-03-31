@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Encoding=UTF-8
+Name=VSCode System B
+Comment=
+Exec=code --folder-uri vscode-remote://ssh-remote+oshqe_master/oshqe/deploy/systems/system_b
+Icon=/snap/code/current/meta/gui/vscode.png
+Terminal=False

@@ -1,0 +1,1 @@
+./management/manage deploy -s all --deploy-dir /oshqe/deploy --overwrite-system --owner 1000:30034 --ctl-host 192.168.168.61 --master-ip 192.168.168.61

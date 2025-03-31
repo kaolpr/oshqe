@@ -1,0 +1,512 @@
+#!/usr/bin/env python
+
+import subprocess
+import argparse
+import os
+import sys
+import tempfile
+import stat
+import shutil
+import glob
+from sipyco import pyon
+from setups import *
+from templates import device_db_template, scope_template, artiq_dashboard_desktop_template
+
+
+# =================================================================================================
+# Prepare mapping and constants
+# =================================================================================================
+
+serial_mapping = {}
+
+for system, ftdi_path in ftdi_mapping.items():
+    if ftdi_path is None:
+        serial_mapping[system] = "/dev/serial/by-id/usb-FTDI_Quad_RS232-HS-if02-port0"
+        continue
+    _, path = ftdi_path.split(':')
+    path = path.replace(',', '.')
+    serial_mapping[system] = f"/dev/serial/by-path/pci-0000:00:14.0-usb-0:{path}:1.2-port0"
+
+experiments_path = os.path.join(
+    os.path.dirname(os.path.realpath(__file__)), '..', 'experiments')
+default_firmware_directory = os.path.join(
+    os.path.dirname(os.path.realpath(__file__)), '..', 'firmware', 'oshqe-v1')
+
+# =================================================================================================
+# Argument parsing
+# =================================================================================================
+
+parser = argparse.ArgumentParser()
+subparsers = parser.add_subparsers(dest='command')
+
+# =================================================================================================
+
+flash_parser = subparsers.add_parser('flash')
+flash_parser.add_argument('--directory', '-d', type=str, default=default_firmware_directory, 
+                          help="firmware directory")
+flash_parser.add_argument('--system', '-s', type=str, required=True, 
+                          help="which system to flash (A or B or .. F or X or 'all' for all)")
+
+# =================================================================================================
+
+restart_parser = subparsers.add_parser('restart')
+restart_parser.add_argument('--system', '-s', type=str, required=True, 
+                            help="which system to restart (A or B or .. F or X or 'all' for all)")
+
+# =================================================================================================
+
+serial_parser = subparsers.add_parser('serial')
+serial_parser.add_argument('--system', '-s', type=str, required=True, 
+                           help="which system to get serial from (A or B or .. F or X)")
+
+# =================================================================================================
+
+device_db_parser = subparsers.add_parser('ddb')
+device_db_parser.add_argument('--system', '-s', type=str, required=True, 
+                              help="which system to restart (A .. F or X or 'all' for all)")
+device_db_parser.add_argument('--ctl-host', type=str, default="::1", required=False, 
+                              help="Controllers host")
+device_db_parser.add_argument('--scope-ctl-host', type=str, required=False, 
+                              help="Oscilloscope controller host")
+
+# =================================================================================================
+
+update_scripts_parser = subparsers.add_parser('update-scripts')
+update_scripts_parser.add_argument('--output', default="./scripts",
+                                   help="Scripts output path")
+update_scripts_parser.add_argument('--system', '-s', type=str, required=True, 
+                                   help="which system to restart (A .. F or X or 'all' for all)")
+update_scripts_parser.add_argument('--master-ip', type=str, default="::1", required=False, 
+                                   help="Master IP address")
+update_scripts_parser.add_argument('--target-dir', required=True, 
+                                   help="Target directory where deployment was made")
+
+# =================================================================================================
+
+dashboard_parser = subparsers.add_parser('dashboard')
+dashboard_parser.add_argument('--system', '-s', type=str, required=True,
+                              help="which system to get serial from (A or B or .. F)")
+dashboard_parser.add_argument('--master-ip', type=str, default="::1", required=False, 
+                              help="Master IP address")
+dashboard_parser.add_argument('--only-cmd', action='store_true',
+                              help="Only display the command to run the dashboard")
+
+# =================================================================================================
+
+deploy_parser = subparsers.add_parser('deploy')
+deploy_parser.add_argument('--system', '-s', type=str, default='all',
+                              help="Create files for given system (A..F or all, defaults to all)")
+deploy_parser.add_argument('--deploy-dir', default="./deploy", 
+                           help="Target directory for deployment (defaults to ./deploy)")
+deploy_parser.add_argument('--users', default=12, type=int, 
+                           help="Number of users per setup (defaults to 12)")
+deploy_parser.add_argument('--master-ip', type=str, default="::1", required=False, 
+                           help="Master IP address (defaults to ::1)")
+deploy_parser.add_argument('--ctl-host', type=str, default=None,
+                              help="Oscilloscope controller host (defaults to master-ip)")
+deploy_parser.add_argument('--scope-ctl-host', type=str, required=False, 
+                              help="Oscilloscope controller host (defaults to ctl-host)")
+deploy_parser.add_argument('--overwrite-system', action='store_true', 
+                           help="Overwrite files in the target directory for given system(s)")
+deploy_parser.add_argument('--user', type=str, 
+                           help="Recreate directory for given user, to be used with --system")
+deploy_parser.add_argument('--overwrite-user', action='store_true', 
+                           help="Overwrite files in the target directory for system/user pair")
+deploy_parser.add_argument('--owner', type=str, default="1000:1000",
+                           help="uid:gid to set for the deploy directory")
+
+# =================================================================================================
+
+generate_dashboard_config = subparsers.add_parser('generate-dashboard-config')
+generate_dashboard_config.add_argument('--applet-path', type=str, required=True,
+                                       help="File path to show_image.py applet with respect to "
+                                            "the dashboard host filesystem")
+generate_dashboard_config.add_argument('--system', '-s', type=str, required=True,
+                                       help="Create files for given system (A..F or all)")
+generate_dashboard_config.add_argument('--users', default=1, type=int, 
+                                       help="Number of users per setup")
+generate_dashboard_config.add_argument('--output-dir', default="./dashboard_configs", 
+                                       help="Output directory to generate configs")
+generate_dashboard_config.add_argument('--master-ip', type=str, default="::1", required=False, 
+                                   help="Master IP address")
+
+# =================================================================================================
+
+artiq_client_parser = subparsers.add_parser('client')
+artiq_client_parser.add_argument('--system', '-s', type=str, required=True,
+                              help="which system to get serial from (A or B or .. F)")
+
+# =================================================================================================
+
+# Consume arguments up to "--", pass the rest to the "cmd_args" variable
+args = sys.argv[1:]
+try:
+    dash_index = args.index("--")
+    args, cmd_args = args[:dash_index], args[dash_index+1:]
+except ValueError:
+    args, cmd_args = args, []
+args = parser.parse_args(args)
+
+# =================================================================================================
+# Commands functions
+# =================================================================================================
+
+def get_systems_list(include_x=False):
+    if args.system == 'all':
+        systems = [system for system in ftdi_mapping.keys() if (system != 'X' or include_x)]
+    else:
+        systems = [args.system]
+    return systems
+
+# =================================================================================================
+
+def flash():
+    for system in get_systems_list():
+        ftdi_path = ftdi_mapping[system]
+        print("\n==> Flashing system ", system, f" with ftdi location {ftdi_path}\n")
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            # Generate RTIO map
+            device_db_path = os.path.join(tmpdirname, 'device_db.py')
+            dev_map_path = os.path.join(tmpdirname, 'dev_map.bin')
+            generate_ddb(device_db_path, system, '::1', "0.0.0.0", 0, 0)
+            subprocess.check_call([
+                'artiq_rtiomap',
+                '--device-db', device_db_path,
+                dev_map_path
+            ])
+            # Generate storage image
+            storage_path = os.path.join(tmpdirname, 'storge.img')
+            subprocess.check_call([
+                'artiq_mkfs',
+                '-s', 'ip', ip_mapping[system],
+                '-f', 'device_map', dev_map_path,
+                storage_path
+            ])
+            cmd = [
+                'artiq_flash', '-t', 'kasli', 
+                '-d', args.directory,
+                '-f', storage_path, 
+                'erase', 'gateware', 'bootloader', 'firmware', 'storage', 'start'
+            ]
+            if ftdi_path is not None:
+                cmd = [cmd[0], '-I', f'ftdi_location {ftdi_path}'] + cmd[1:]
+            print(cmd)
+            subprocess.check_call(cmd)
+
+# =================================================================================================
+
+def restart():
+    for system in get_systems_list():
+        print("\n==> Restarting system ", system, f" with ftdi location {ftdi_mapping[system]}\n")
+        ftdi_path = ftdi_mapping[system]
+        cmd = [
+            'artiq_flash', '-t', 'kasli',
+            'start'
+        ]
+        if ftdi_path is not None:
+            cmd = [cmd[0], '-I', f'ftdi_location {ftdi_path}'] + cmd[1:]
+        subprocess.run(cmd)
+
+# =================================================================================================
+
+def serial():
+    system = args.system
+    print(f"\n==> Serial port for system {system} under {serial_mapping[system]}\n")
+    print("\nTo exit press Ctrl + C\n")
+    subprocess.run(['flterm', serial_mapping[system]])
+
+# =================================================================================================
+
+def generate_ddb(target_path, system, ctl_host, scope_serial, scope_ctl_host, scope_ctl_port):
+    with open(target_path, 'w') as f:
+        f.write(device_db_template.format(
+            core_ip=ip_mapping[system],
+            system=system,
+            ctl_host=ctl_host,
+            corelog_ctl_port=corelog_controller_ports[system],
+            moninj_proxy_port=moninj_proxy_ports[system],
+            moninj_ctl_port=moninj_controller_ports[system],
+            coreanalyzer_proxy_port=coreanalyzer_proxy_ports[system],
+            coreanalyzer_ctl_port=coreanalyzer_controller_ports[system],
+        ))
+        # if scope_serial is not None and scope_ctl_port is not None:
+        #     f.write(scope_template.format(
+        #         scope_ctl_host=scope_ctl_host,
+        #         scope_ctl_port=scope_ctl_port,
+        #         scope_serial=scope_serial))
+        # else:
+        #     raise RuntimeError("Invalid scope data")
+
+def ddb():
+    ctl_host = args.ctl_host
+    scope_ctl_host = args.scope_ctl_host
+    if scope_ctl_host is None:
+        scope_ctl_host = ctl_host
+
+    for system in get_systems_list(include_x=True):
+        scope_ip = scope_ip_mapping[system]
+        scope_ctl_port = scope_controller_ports[system]
+        generate_ddb(
+            os.path.join(experiments_path, f"device_db_{system.lower()}.py"),
+            system, ctl_host, scope_ip, scope_ctl_host, scope_ctl_port)        
+
+# =================================================================================================
+
+def generate_session_script(target_path, system, master_ip, system_deploy_dir):
+    master_cmd = [
+        "artiq_master",
+        "--device-db", "device_db.py",
+        "--bind", "'*'",
+        "--port-notify", str(master_notify_ports[system]),
+        "--port-control", str(master_control_ports[system]),
+        "--port-logging", str(master_logging_ports[system]),
+        "--port-broadcast", str(master_broadcast_ports[system]),
+        "--name", f"\"System {system}\"",
+    ]
+    ctlmgr_cmd = [
+        "artiq_ctlmgr",
+        "--server", master_ip,
+        "--port-notify", str(master_notify_ports[system]),
+        "--port-logging", str(master_logging_ports[system]),
+        "--port-control", str(ctlmgr_control_ports[system]),
+    ]
+
+    with open(target_path, 'w') as f:
+        f.write(f"#!/bin/bash\n\n")
+        f.write(f"cd {system_deploy_dir}\n\n")
+        f.write(" ".join(master_cmd) + " &\n\n")
+        f.write("sleep 5\n\n")
+        f.write(" ".join(ctlmgr_cmd) + "\n")
+
+    st = os.stat(target_path)
+    os.chmod(target_path, st.st_mode | stat.S_IEXEC)
+
+def update_master_scripts():
+    master_ip = args.master_ip
+    os.makedirs(args.output, exist_ok=True)
+    for system in get_systems_list():
+        script_path = os.path.join(args.output, f'run_session_{system.lower()}')
+        system_dir_path = \
+            os.path.abspath(os.path.join(args.target_dir, f"system_{system.lower()}"))
+        generate_session_script(script_path, system, master_ip, system_dir_path)
+
+# =================================================================================================
+
+def dashboard():
+    assert args.system in ['A', 'B', 'C', 'D', 'E', 'F'], \
+        "Invalid system, only A-F are allowed, one at a time"
+
+    dashboard_cmd = [
+        "artiq_dashboard",
+        "--server", args.master_ip,
+        "--port-notify", str(master_notify_ports[args.system]),
+        "--port-control", str(master_control_ports[args.system]),
+        "--port-broadcast", str(master_broadcast_ports[args.system]),
+    ]
+    if args.only_cmd:
+        print(" ".join(dashboard_cmd))
+        return
+    
+    with subprocess.Popen(dashboard_cmd):
+        pass
+
+# =================================================================================================
+
+def make_user_dir(systems_dir, system, user_i, overwrite):
+    system_dir = os.path.join(systems_dir, f"system_{system.lower()}")
+    user_dir = os.path.join(system_dir, "repository", f"user{user_i:02d}")
+    if not os.path.exists(user_dir):
+        os.makedirs(user_dir)
+    elif overwrite:
+        shutil.rmtree(user_dir)
+        os.makedirs(user_dir)
+    else:
+        print(f"Skipping creation of directory for system {system}, user {user_i}")
+        return
+    
+    # Copy experiments
+    prefix_ignore = ['__init__.py', 'common.py']
+    ignore = ['user.py']
+    for root, _, files in os.walk(os.path.join(experiments_path, 'repository')):
+        if root.split('/')[-1] == '__pycache__':
+            continue
+        for file in files:
+            relative_path = os.path.relpath(root, os.path.join(experiments_path, 'repository'))
+            target_dir = os.path.join(user_dir, relative_path)
+            os.makedirs(target_dir, exist_ok=True)
+            if file in ignore:
+                continue
+            elif file in prefix_ignore:
+                target_path = os.path.join(target_dir, file)
+            else:
+                target_path = os.path.join(target_dir, f"user{user_i:02d}_{file}")
+            shutil.copy(os.path.join(root, file), target_path)
+            os.chmod(target_path, 0o664)
+    
+    # Generate user.py file
+    with tempfile.TemporaryDirectory() as temp_dir:
+        user_file_path = os.path.join(temp_dir, "user.py")
+        with open(user_file_path, 'w') as user_file:
+            user_file.write("# This file defines your user ID. DO NOT EDIT!\n")
+            user_file.write(f"user_id = {user_i}\n")
+        shutil.copy(user_file_path, 
+                    os.path.join(user_dir, "user.py"))
+
+
+def make_system_dir(systems_dir, system, users, ctl_host, scope_ctl_host, overwirte):
+    system_dir = os.path.join(systems_dir, f"system_{system.lower()}")
+    if not os.path.exists(system_dir):
+        os.makedirs(system_dir)
+    elif overwirte:
+        shutil.rmtree(system_dir)
+        os.makedirs(system_dir)
+    else:
+        raise RuntimeError(
+            f"System {system} directory already exists, use --overwrite-system to recreate")
+
+    target_ddb_path = os.path.join(system_dir, "device_db.py")
+    generate_ddb(target_path=target_ddb_path,
+                 system=system,
+                 ctl_host=ctl_host,
+                 scope_serial=scope_serial_mapping[system], 
+                 scope_ctl_host=scope_ctl_host, 
+                 scope_ctl_port=scope_controller_ports[system])
+    os.chmod(target_ddb_path, 0o644)
+
+    # At this point user directories never exist
+    for user_i in range(users):
+        make_user_dir(systems_dir, system, user_i, False)
+
+def deploy():
+    system = args.system
+    deploy_dir = args.deploy_dir
+    master_ip = args.master_ip
+    ctl_host = args.ctl_host if args.ctl_host is not None else master_ip
+    scope_ctl_host = args.scope_ctl_host if args.scope_ctl_host is not None else ctl_host
+    users = args.users
+    user = args.user
+    overwrite_system = args.overwrite_system
+    overwirte_user = args.overwrite_user
+    uid, gid = args.owner.split(':')
+    
+    # Make sure target dir exists
+    if os.path.exists(deploy_dir) and overwrite_system:
+        shutil.rmtree(deploy_dir)
+    os.makedirs(deploy_dir, exist_ok=True)
+
+    # Make sure systems dir exists
+    systems_dir = os.path.join(deploy_dir, "systems")
+    os.makedirs(systems_dir, exist_ok=True)
+
+    # Mode for resetting user directory
+    if user is not None:
+        make_user_dir(systems_dir, system, user, overwirte_user)
+    # Mode for creating system directories
+    else:
+        for system in get_systems_list():
+            make_system_dir(systems_dir, system, users, ctl_host, scope_ctl_host, overwrite_system)
+
+    # Make sure scripts dir exists
+    scripts_dir = os.path.join(deploy_dir, "scripts")
+    os.makedirs(scripts_dir, exist_ok=True)
+
+    # Generate scripts
+    for system in get_systems_list():
+        script_path = os.path.join(scripts_dir, f'run_session_{system.lower()}')
+        system_dir_path = os.path.abspath(os.path.join(systems_dir, f"system_{system.lower()}"))
+        generate_session_script(script_path, system, master_ip, system_dir_path)
+
+    # Change owner and group of systems_dir to 1000:1000
+    shutil.chown(systems_dir, user=int(uid), group=int(gid))
+    for root, dirs, files in os.walk(systems_dir):
+        for dir in dirs:
+            shutil.chown(os.path.join(root, dir), user=int(uid), group=int(gid))
+        for file in files:
+            shutil.chown(os.path.join(root, file), user=int(uid), group=int(gid))
+
+# =================================================================================================
+
+def generate_dashboard_config():
+    applet_path = args.applet_path
+    users = args.users
+    master_ip = args.master_ip
+
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    for system in get_systems_list():
+        applets = []
+        config = pyon.load_file(
+            os.path.join(os.path.dirname(__file__), "dashboard_config.pyon"))
+        applet_template = config['AppletsCCBDock']['applets'][0]
+        for user_id in range(users):
+            applets.append((
+                'applet',
+                user_id,
+                False,
+                f'User {user_id} Scope View',
+                {
+                    'command': f'python {applet_path} scope_{user_id}',
+                    'ty': 'command'
+                },
+                applet_template[5]
+            ))
+        config['AppletsCCBDock']['applets'] = applets
+        output_path = os.path.join(
+            args.output_dir, f"artiq_dashboard_{master_ip}_{master_notify_ports[system]}.pyon")
+        pyon.store_file(output_path, config)
+
+        # Desktop icon
+        output_path = os.path.join(
+            args.output_dir, f"artiq_dashboard_system_{system.lower()}.desktop")
+        with open(output_path, 'w+') as f:
+            f.write(artiq_dashboard_desktop_template.format(
+                system=system,
+                port_notify=master_notify_ports[system],
+                port_control=master_control_ports[system],
+                port_broadcast=master_broadcast_ports[system],
+                master_ip=master_ip,
+                master_notify_port=master_notify_ports[system]
+            ))
+
+
+# =================================================================================================
+
+def run_artiq_client():
+    system = args.system
+    cmd = [
+        "artiq_client",
+        "--server", "::1",
+        "--port", str(master_control_ports[system]),
+        *cmd_args
+    ]
+    subprocess.run(cmd)
+
+# =================================================================================================
+# Entrypoint function
+# =================================================================================================
+
+def main():
+    if args.command == 'flash':    
+        flash()
+    elif args.command == 'restart':
+        restart()
+    elif args.command == 'serial':
+        serial()
+    elif args.command == "ddb":
+        ddb()
+    elif args.command == "update-scripts":
+        update_master_scripts()
+    elif args.command == "dashboard":
+        dashboard()
+    elif args.command == "deploy":
+        deploy()
+    elif args.command == "generate-dashboard-config":
+        generate_dashboard_config()
+    elif args.command == "client":
+        run_artiq_client()
+    else:
+        print("Invalid command")
+        exit(1)
+
+if __name__ == "__main__":
+    main()

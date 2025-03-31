@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Encoding=UTF-8
+Name=ARTIQ Dashboard System A
+Comment=
+Exec=nix develop github:m-labs/artiq?rev=431c415423e709178263d3463f8c4ab905e9b796#boards --command artiq_dashboard --port-notify 3250 --port-control 3251 --port-broadcast 1067 --server 192.168.168.61 --db-file /home/oshqe/dashboard-configs/artiq_dashboard_192.168.168.61_3250.pyon
+Icon=/home/oshqe/.artiq.png
+Terminal=False

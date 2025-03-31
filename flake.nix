@@ -83,7 +83,6 @@
       };
       packages.x86_64-linux = {
         firmware-oshqe-v1 = makeArtiqBoardPackage "oshqe-v1";
-
         ddb-oshqe-v1 = makeVariantDDB "oshqe-v1";
       };
     };
