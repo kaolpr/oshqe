@@ -349,7 +349,7 @@ Type=Application
 Encoding=UTF-8
 Name=ARTIQ Dashboard System {system}
 Comment=
-Exec=nix develop github:m-labs/artiq?rev=431c415423e709178263d3463f8c4ab905e9b796#boards --command artiq_dashboard --port-notify {port_notify} --port-control {port_control} --port-broadcast {port_broadcast} --server {master_ip} --db-file /home/oshqe/dashboard-configs/artiq_dashboard_{master_ip}_{master_notify_port}.pyon
-Icon=/home/oshqe/dashboard-configs/artiq.png
+Exec=nix develop github:m-labs/artiq?rev=431c415423e709178263d3463f8c4ab905e9b796#boards --command artiq_dashboard --port-notify {port_notify} --port-control {port_control} --port-broadcast {port_broadcast} --server {master_ip} --db-file /home/oshqe/oshqe/dashboard-configs/artiq_dashboard_{master_ip}_{master_notify_port}.pyon
+Icon=/home/oshqe/oshqe/dashboard-configs/artiq.png
 Terminal=False
 """
