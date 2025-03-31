@@ -4,5 +4,5 @@ Encoding=UTF-8
 Name=ARTIQ Dashboard System C
 Comment=
 Exec=nix develop github:m-labs/artiq?rev=431c415423e709178263d3463f8c4ab905e9b796#boards --command artiq_dashboard --port-notify 3450 --port-control 3451 --port-broadcast 1267 --server 192.168.168.61 --db-file /home/oshqe/dashboard-configs/artiq_dashboard_192.168.168.61_3450.pyon
-Icon=/home/oshqe/.artiq.png
+Icon=/home/oshqe/dashboard-configs/artiq.png
 Terminal=False
