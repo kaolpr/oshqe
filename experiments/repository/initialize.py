@@ -20,7 +20,6 @@ class Initialize(EnvExperiment):
         ]
         self.setattr_device("fastino0")
 
-        self.scope = Scope(self, user_id)   
 
     @kernel
     def init(self):
@@ -67,7 +66,6 @@ class Initialize(EnvExperiment):
             
             # Profile scope.setup()
             setup_start = time.time()
-            self.scope.setup_for_all()
             setup_end = time.time()
             setup_time = setup_end - setup_start
             
@@ -79,7 +77,6 @@ class Initialize(EnvExperiment):
             
             # Profile scope.store_waveform()
             store_start = time.time()
-            self.scope.store_waveform()
             store_end = time.time()
             store_time = store_end - store_start
             

@@ -84,8 +84,6 @@ class FastinoInterpolationExcercise(EnvExperiment):
             )
         )
 
-        self.scope = Scope(self, user_id)
-
     def prepare(self):
         # Sine
         sine = [np.sin(2*np.pi*i/self.Sample_number*2) for i in range(self.Sample_number)]
@@ -105,14 +103,11 @@ class FastinoInterpolationExcercise(EnvExperiment):
         self.samples = [self.Amplitude * self.samples[i]/max(self.samples) for i in range(len(self.samples))]
 
         # Argument hackery
-        self.Scope_horizontal_scale = int(self.Scope_horizontal_scale[:-3])*us
         if not self.Enable_interpolation:
             self.Interpolation_rate = 1
 
     @kernel
     def run(self):
-        # Prepare oscilloscope
-        self.scope.setup_for_fastino(horizontal_scale=self.Scope_horizontal_scale)
         # Reset our system after previous experiment
         self.core.reset()
 
@@ -147,8 +142,6 @@ class FastinoInterpolationExcercise(EnvExperiment):
         finally:
             # Clean up even if RTIO Underflow happens
             self.clean_up()
-            # Get scope image
-            self.scope.store_waveform()
 
     @kernel
     def clean_up(self):

@@ -11,12 +11,9 @@ class TTLUrukul2Solution(EnvExperiment):
         self.urukul_channels = [
             self.get_device(f"urukul0_ch0")
         ]
-        self.scope = Scope(self, user_id)
 
     @kernel
     def run(self):
-        # Prepare oscilloscope for experiment
-        self.scope.setup_for_urukul(horizontal_scale=1*us)
 
         # Reset our system after previous experiment
         self.core.reset()
@@ -56,5 +53,3 @@ class TTLUrukul2Solution(EnvExperiment):
                 self.urukul_channels[0].sw.pulse(1*us)
 
         # END SOLUTION ---------------------------------------------------------
-        # This commmand downloads the waveform from the scope
-        self.scope.store_waveform()

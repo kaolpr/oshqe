@@ -16,7 +16,6 @@ class FastinoPrepareExcercise(EnvExperiment):
             )
         )
 
-        self.scope = Scope(self, user_id)
 
     def prepare(self):
         # Use these parameters
@@ -45,8 +44,6 @@ class FastinoPrepareExcercise(EnvExperiment):
 
     @kernel
     def run(self):
-        # Prepare oscilloscope
-        self.scope.setup_for_fastino(horizontal_scale=self.Scope_horizontal_scale)
         # Reset our system after previous experiment
         self.core.reset()
 
@@ -76,6 +73,4 @@ class FastinoPrepareExcercise(EnvExperiment):
             # Clean up even if RTIO Underflow happens
             delay(self.Scope_horizontal_scale * 10)
             self.fastino.set_dac(dac=0, voltage=0.0*V)
-            # Get scope image
-            self.scope.store_waveform()
 

@@ -8,12 +8,9 @@ class FastinoBasicExcerciseSolution(EnvExperiment):
         self.setattr_device("core")
         self.ttl = self.get_device("ttl1") # As a trigger
         self.fastino = self.get_device("fastino0")
-        self.scope = Scope(self, user_id)
 
     @kernel
     def run(self):
-        # Prepare oscilloscope
-        self.scope.setup_for_fastino()
         # Reset our system after previous experiment
         self.core.reset()
 
@@ -50,6 +47,4 @@ class FastinoBasicExcerciseSolution(EnvExperiment):
             # Clean up even if RTIO Underflow happens
             delay(40*us)
             self.fastino.set_dac(dac=0, voltage=0.0*V)
-            # Get scope image
-            self.scope.store_waveform()
 
