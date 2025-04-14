@@ -5,14 +5,16 @@ PERIOD_US = 28 * us
 N_SAMPLES = 8
 
 
-class SamplerBasicExcerciseSolution(EnvExperiment):
+class SamplerBasicExcercise(EnvExperiment):
     def build(self):
         self.setattr_device("core")
         self.ttl1 = self.get_device("ttl1")
 
         # ----------------------------------------------------------------------
-        self.sampler = self.get_device("sampler0")
-        # ----------------------------------------------------------------------
+        """
+        TODO: Get the sampler device
+        """
+        # -----------------------------------------------------------------------
 
     @kernel
     def init(self):
@@ -23,12 +25,11 @@ class SamplerBasicExcerciseSolution(EnvExperiment):
         delay(1 * us)
 
         # ----------------------------------------------------------------------
-        self.sampler.init()
-        delay(1 * us)
-        for ch in range(8):
-            self.sampler.set_gain_mu(ch, 0)
-            delay(1 * us)
-        # ----------------------------------------------------------------------
+        """
+        TODO: Initialize the sampler device and set the gain for all channels
+            to 1. Assume delay(1 * us) is needed after each command.
+        """
+        # -----------------------------------------------------------------------
 
     @kernel
     def generate_pulses(self):
@@ -60,16 +61,15 @@ class SamplerBasicExcerciseSolution(EnvExperiment):
         self.generate_pulses()
         # Set system time pointer back to t0
         at_mu(t0)
-
         # ----------------------------------------------------------------------
-        # Since we want to sample each state (both on and off) we need to sample
-        # signal twice during one period.
-        for i in range(2 * N_SAMPLES):
-            # Distribute sampling evenly over the period of the signal, starting
-            # at the middle of the first upper state.
-            at_mu(t0 + self.core.seconds_to_mu(PERIOD_US / 4 + i * PERIOD_US / 2))
-            # Sample the input signal and store the sampled value in the list
-            self.sampler.sample(self.sampled_values[i])
+        """
+        TODO: Place your code here
+
+        Sample the signal from TTL1 using the sampler device. Signal should be
+        sampled twice during one period. 
+
+        Populate the self.sampled_values list with sampled values.
+        """
         # ----------------------------------------------------------------------
 
     def analyze(self):
