@@ -31,10 +31,10 @@ class SamplerWaveformSolution(EnvExperiment):
         self.setattr_argument(
             "gain", EnumerationValue(["1", "10", "100", "1000"], default="1")
         )
-        self.gain_modifier = map_gain(self.gain)
 
     def prepare(self):
         self.samples_mu = [0 for n in range(N_SAMPLE_SETS)]
+        self.gain_modifier = map_gain(self.gain)
 
     @kernel
     def init(self):
