@@ -1,7 +1,7 @@
 from artiq.experiment import *
 
 
-class BusyErrorSolution(EnvExperiment):
+class BusyError(EnvExperiment):
     def build(self):
         self.setattr_device("core")
         self.urukul = self.get_device("urukul0_cpld")
